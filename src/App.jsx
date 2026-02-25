@@ -112,7 +112,7 @@ async function saveStateToDb(nextState) {
 export default function App() {
   const today = getTodayDateIST();
   const [data, setData] = useState(createDefaultState);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const [sortBy, setSortBy] = useState("priority");
   const [filterType, setFilterType] = useState("All");
@@ -400,7 +400,6 @@ export default function App() {
       <section className="hero">
         <div>
           <h1>Daily Planner</h1>
-          <p className="hero-tagline">Plan deep work, learning, and meetings with clarity.</p>
           <p className="hero-date">Viewing (IST): {formatDateIST(data.selectedDate)}</p>
         </div>
       </section>

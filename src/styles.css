@@ -21,10 +21,7 @@ body {
   margin: 0;
   font-family: Manrope, sans-serif;
   color: var(--ink);
-  background:
-    radial-gradient(90rem 45rem at 0% 0%, #dce9ff 0%, transparent 55%),
-    radial-gradient(80rem 42rem at 100% 0%, #ddfaef 0%, transparent 48%),
-    linear-gradient(130deg, var(--bg-1), var(--bg-2) 44%, var(--bg-3));
+  background: linear-gradient(135deg, #f9fbff, #fdfefb);
 }
 
 .app-shell {
@@ -37,8 +34,8 @@ body {
 }
 
 .hero {
-  background: linear-gradient(120deg, #2e63f4, #1f8fc5 56%, #19a88b);
-  color: #f8fbff;
+  background: linear-gradient(120deg, #f4f7ff, #e8f7ff 56%, #e7fff6);
+  color: #1a2740;
   border-radius: 18px;
   padding: 16px 18px;
   display: grid;
