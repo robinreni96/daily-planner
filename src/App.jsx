@@ -436,15 +436,6 @@ export default function App() {
     return sorted;
   }, [data.tasks, data.selectedDate, filterType, filterCategory, filterStatus, sortBy, showAllTasks]);
 
-  const metrics = useMemo(() => {
-    return {
-      total: visibleTasks.length,
-      completed: visibleTasks.filter((task) => task.done).length,
-      pending: visibleTasks.filter((task) => !task.done).length,
-      meetings: visibleTasks.filter((task) => task.taskType === "Meeting").length
-    };
-  }, [visibleTasks]);
-
   const groupedTasks = useMemo(() => {
     const groups = {};
     visibleTasks.forEach((task) => {
@@ -722,36 +713,6 @@ export default function App() {
               </section>
             ))}
 
-            <section className="metrics-box">
-              <article className="metric-item">
-                <span className="metric-icon">📋</span>
-                <div>
-                  <strong>{metrics.total}</strong>
-                  <span>Total</span>
-                </div>
-              </article>
-              <article className="metric-item">
-                <span className="metric-icon">⏳</span>
-                <div>
-                  <strong>{metrics.pending}</strong>
-                  <span>Pending</span>
-                </div>
-              </article>
-              <article className="metric-item">
-                <span className="metric-icon">✅</span>
-                <div>
-                  <strong>{metrics.completed}</strong>
-                  <span>Completed</span>
-                </div>
-              </article>
-              <article className="metric-item">
-                <span className="metric-icon">📅</span>
-                <div>
-                  <strong>{metrics.meetings}</strong>
-                  <span>Meetings</span>
-                </div>
-              </article>
-            </section>
           </div>
 
           <aside className={`settings-panel ${isSettingsOpen ? "open" : "collapsed"}`}>
