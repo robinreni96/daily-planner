@@ -13,6 +13,7 @@
     "start:api": "node server.js"
   },
   "dependencies": {
+    "@vercel/postgres": "^0.10.0",
     "better-sqlite3": "^12.6.2",
     "express": "^5.2.1",
     "react": "^18.3.1",
