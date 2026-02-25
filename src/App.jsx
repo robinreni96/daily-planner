@@ -477,7 +477,6 @@ export default function App() {
             <div className="panel">
               <header className="panel-header">
                 <h2>Add task</h2>
-                <p className="panel-subtitle">Capture what matters for today in a few focused fields.</p>
               </header>
 
               <form className="form panel-body" onSubmit={submitTask}>
@@ -768,7 +767,6 @@ export default function App() {
               <div className="settings-body panel">
                 <header className="panel-header">
                   <h3>Task settings</h3>
-                  <p className="panel-subtitle">Filter, sort, and focus your board.</p>
                 </header>
                 <div className="toolbar panel-body">
                   <label>
