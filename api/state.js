@@ -1,7 +1,21 @@
-import { sql } from "@vercel/postgres";
+import { neon } from "@neondatabase/serverless";
+import { randomUUID } from "crypto";
 
 const IST_TIMEZONE = "Asia/Kolkata";
 const DEFAULT_CATEGORY_COLOR = "#4f8dfd";
+
+const connectionString =
+  process.env.POSTGRES_URL ||
+  process.env.DATABASE_URL ||
+  process.env.NEON_DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error(
+    "Missing Postgres connection string. Set POSTGRES_URL (recommended) or DATABASE_URL / NEON_DATABASE_URL."
+  );
+}
+
+const sql = neon(connectionString);
 
 function getTodayDateIST() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -56,7 +70,7 @@ function normalizeState(payload) {
   const safeTasks = tasks
     .filter((task) => task && typeof task === "object")
     .map((task) => ({
-      id: String(task.id || crypto.randomUUID()),
+      id: String(task.id || randomUUID()),
       name: String(task.name || ""),
       description: String(task.description || ""),
       priority: String(task.priority || "Medium"),
@@ -92,26 +106,26 @@ async function ensureTable() {
 async function getStateFromDb() {
   await ensureTable();
 
-  const result = await sql`SELECT payload FROM planner_state WHERE id = 1;`;
+  const rows = await sql`SELECT payload FROM planner_state WHERE id = 1;`;
 
-  if (result.rows.length === 0) {
+  if (rows.length === 0) {
     const normalized = normalizeState(defaultState);
     await sql`
       INSERT INTO planner_state (id, payload)
-      VALUES (1, ${sql.json(normalized)})
+      VALUES (1, ${JSON.stringify(normalized)}::jsonb)
       ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW();
     `;
     return normalized;
   }
 
   try {
-    const raw = result.rows[0].payload;
+    const raw = rows[0].payload;
     return normalizeState(raw);
   } catch {
     const normalized = normalizeState(defaultState);
     await sql`
       INSERT INTO planner_state (id, payload)
-      VALUES (1, ${sql.json(normalized)})
+      VALUES (1, ${JSON.stringify(normalized)}::jsonb)
       ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW();
     `;
     return normalized;
@@ -125,7 +139,7 @@ async function saveStateToDb(payload) {
 
   await sql`
     INSERT INTO planner_state (id, payload)
-    VALUES (1, ${sql.json(safeState)})
+    VALUES (1, ${JSON.stringify(safeState)}::jsonb)
     ON CONFLICT (id) DO UPDATE SET
       payload = EXCLUDED.payload,
       updated_at = NOW();
