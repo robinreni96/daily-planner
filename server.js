@@ -12,6 +12,7 @@ const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
 const NODE_ENV = process.env.NODE_ENV || "development";
 const DEFAULT_CATEGORY_COLOR = "#4f8dfd";
+const ALLOWED_SORT_BY = new Set(["priority", "category", "taskType", "createdAt", "manual"]);
 
 function getTodayDateIST() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -28,7 +29,8 @@ const defaultState = {
   tasks: [],
   categories: ["General"],
   categoryColors: { General: DEFAULT_CATEGORY_COLOR },
-  selectedDate: getTodayDateIST()
+  selectedDate: getTodayDateIST(),
+  sortBy: "priority"
 };
 
 function normalizeState(payload) {
@@ -65,7 +67,7 @@ function normalizeState(payload) {
   const tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
   const safeTasks = tasks
     .filter((task) => task && typeof task === "object")
-    .map((task) => ({
+    .map((task, index) => ({
       id: String(task.id || randomUUID()),
       name: String(task.name || ""),
       description: String(task.description || ""),
@@ -78,14 +80,16 @@ function normalizeState(payload) {
       date: String(task.date || getTodayDateIST()),
       done: Boolean(task.done),
       hidden: Boolean(task.hidden),
-      createdAt: Number(task.createdAt || Date.now())
+      createdAt: Number(task.createdAt || Date.now()),
+      order: Number.isFinite(Number(task.order)) ? Number(task.order) : index
     }));
 
   return {
     tasks: safeTasks,
     categories,
     categoryColors,
-    selectedDate: String(payload?.selectedDate || getTodayDateIST())
+    selectedDate: String(payload?.selectedDate || getTodayDateIST()),
+    sortBy: ALLOWED_SORT_BY.has(payload?.sortBy) ? payload.sortBy : defaultState.sortBy
   };
 }
 

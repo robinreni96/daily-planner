@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 
 const IST_TIMEZONE = "Asia/Kolkata";
 const DEFAULT_CATEGORY_COLOR = "#4f8dfd";
+const ALLOWED_SORT_BY = new Set(["priority", "category", "taskType", "createdAt", "manual"]);
 
 const connectionString =
   process.env.POSTGRES_URL ||
@@ -32,7 +33,8 @@ const defaultState = {
   tasks: [],
   categories: ["General"],
   categoryColors: { General: DEFAULT_CATEGORY_COLOR },
-  selectedDate: getTodayDateIST()
+  selectedDate: getTodayDateIST(),
+  sortBy: "priority"
 };
 
 function normalizeState(payload) {
@@ -69,7 +71,7 @@ function normalizeState(payload) {
   const tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
   const safeTasks = tasks
     .filter((task) => task && typeof task === "object")
-    .map((task) => ({
+    .map((task, index) => ({
       id: String(task.id || randomUUID()),
       name: String(task.name || ""),
       description: String(task.description || ""),
@@ -82,14 +84,16 @@ function normalizeState(payload) {
       date: String(task.date || getTodayDateIST()),
       done: Boolean(task.done),
       hidden: Boolean(task.hidden),
-      createdAt: Number(task.createdAt || Date.now())
+      createdAt: Number(task.createdAt || Date.now()),
+      order: Number.isFinite(Number(task.order)) ? Number(task.order) : index
     }));
 
   return {
     tasks: safeTasks,
     categories,
     categoryColors,
-    selectedDate: String(payload?.selectedDate || getTodayDateIST())
+    selectedDate: String(payload?.selectedDate || getTodayDateIST()),
+    sortBy: ALLOWED_SORT_BY.has(payload?.sortBy) ? payload.sortBy : defaultState.sortBy
   };
 }
 
@@ -179,4 +183,3 @@ export default async function handler(req, res) {
     res.status(500).json({ error: "Internal Server Error" });
   }
 }
-

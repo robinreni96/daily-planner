@@ -4,6 +4,7 @@ const API_STATE_PATH = "/api/state";
 const IST_TIMEZONE = "Asia/Kolkata";
 const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 };
 const DEFAULT_CATEGORY_COLOR = "#4f8dfd";
+const ALLOWED_SORT_BY = new Set(["priority", "category", "taskType", "createdAt", "manual"]);
 
 function getTodayDateIST() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -59,7 +60,8 @@ function createDefaultState() {
     tasks: [],
     categories: ["General"],
     categoryColors: { General: DEFAULT_CATEGORY_COLOR },
-    selectedDate: today
+    selectedDate: today,
+    sortBy: "priority"
   };
 }
 
@@ -90,7 +92,8 @@ function normalizeState(raw) {
     tasks,
     categories: categories.length ? categories : fallback.categories,
     categoryColors: buildCategoryColors(raw.categoryColors, categories),
-    selectedDate: typeof raw.selectedDate === "string" && raw.selectedDate ? raw.selectedDate : fallback.selectedDate
+    selectedDate: typeof raw.selectedDate === "string" && raw.selectedDate ? raw.selectedDate : fallback.selectedDate,
+    sortBy: ALLOWED_SORT_BY.has(raw.sortBy) ? raw.sortBy : fallback.sortBy
   };
 }
 
@@ -114,12 +117,13 @@ export default function App() {
   const [data, setData] = useState(createDefaultState);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const [sortBy, setSortBy] = useState("priority");
+  const [sortBy, setSortBy] = useState(createDefaultState().sortBy);
   const [filterType, setFilterType] = useState("All");
   const [filterCategory, setFilterCategory] = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
   const [showAllTasks, setShowAllTasks] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [draggingId, setDraggingId] = useState(null);
 
   const [newCategory, setNewCategory] = useState("");
   const [newCategoryColor, setNewCategoryColor] = useState(DEFAULT_CATEGORY_COLOR);
@@ -148,6 +152,7 @@ export default function App() {
       .then((loaded) => {
         if (isCancelled) return;
         setData(loaded);
+        setSortBy(loaded.sortBy || "priority");
         setForm((prev) => ({
           ...prev,
           category: loaded.categories[0] || "General",
@@ -307,6 +312,50 @@ export default function App() {
     persist({ ...data, tasks });
   }
 
+  function reorderTasksWithinDay(sourceId, targetId) {
+    if (!sourceId || !targetId || sourceId === targetId) {
+      setDraggingId(null);
+      return;
+    }
+
+    const sameDateTasks = data.tasks.filter((task) => task.date === data.selectedDate);
+    const otherTasks = data.tasks.filter((task) => task.date !== data.selectedDate);
+
+    const ordered = sameDateTasks
+      .map((task, index) => ({
+        task,
+        orderValue: Number.isFinite(task.order) ? Number(task.order) : index
+      }))
+      .sort((a, b) => a.orderValue - b.orderValue)
+      .map((entry) => entry.task);
+
+    const fromIndex = ordered.findIndex((task) => task.id === sourceId);
+    const toIndex = ordered.findIndex((task) => task.id === targetId);
+
+    if (fromIndex === -1 || toIndex === -1) {
+      setDraggingId(null);
+      return;
+    }
+
+    const reordered = [...ordered];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+
+    const reindexed = reordered.map((task, index) => ({ ...task, order: index }));
+    const nextTasks = [...otherTasks, ...reindexed];
+
+    const next = { ...data, tasks: nextTasks, sortBy: "manual" };
+    setSortBy("manual");
+    persist(next);
+    setDraggingId(null);
+  }
+
+  function updateSortBy(value) {
+    const safeValue = ALLOWED_SORT_BY.has(value) ? value : "priority";
+    setSortBy(safeValue);
+    persist({ ...data, sortBy: safeValue });
+  }
+
   function changeSelectedDate(value) {
     const selectedDate = value || today;
     const next = { ...data, selectedDate };
@@ -318,7 +367,7 @@ export default function App() {
     setFilterType("All");
     setFilterCategory("All");
     setFilterStatus("All");
-    setSortBy("priority");
+    updateSortBy("priority");
   }
 
   function getCategoryPillStyle(category) {
@@ -348,6 +397,16 @@ export default function App() {
       if (filterStatus === "Completed" && !task.done) return false;
       return true;
     });
+
+    if (sortBy === "manual") {
+      const withOrder = filtered.map((task, index) => ({
+        task,
+        orderValue: Number.isFinite(task.order) ? Number(task.order) : index
+      }));
+
+      withOrder.sort((a, b) => a.orderValue - b.orderValue);
+      return withOrder.map((entry) => entry.task);
+    }
 
     const sorted = [...filtered].sort((a, b) => {
       if (sortBy === "priority") {
@@ -607,7 +666,15 @@ export default function App() {
 
                 <ul className="task-list">
                   {tasks.map((task) => (
-                    <li key={task.id} className={`task ${task.done ? "done" : ""}`}>
+                    <li
+                      key={task.id}
+                      className={`task ${task.done ? "done" : ""}`}
+                      draggable
+                      onDragStart={() => setDraggingId(task.id)}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={() => reorderTasksWithinDay(draggingId, task.id)}
+                      onDragEnd={() => setDraggingId(null)}
+                    >
                       <div>
                         <div className="task-title">{task.name}</div>
                         <div className="task-desc">{task.description || "No description"}</div>
@@ -715,11 +782,12 @@ export default function App() {
 
                   <label>
                     Sort By
-                    <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+                    <select value={sortBy} onChange={(event) => updateSortBy(event.target.value)}>
                       <option value="priority">Priority</option>
                       <option value="category">Category</option>
                       <option value="taskType">Task Type</option>
                       <option value="createdAt">Newest</option>
+                      <option value="manual">Custom order</option>
                     </select>
                   </label>
 
