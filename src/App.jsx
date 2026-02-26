@@ -487,6 +487,18 @@ export default function App() {
   }
 
   function startPomodoro(taskId) {
+    const existing = pomodoroTimers[taskId];
+
+    if (existing && Number(existing.remainingSeconds) > 0) {
+      const nextTimers = {
+        ...pomodoroTimers,
+        [taskId]: { ...existing, isRunning: true }
+      };
+      setPomodoroTimers(nextTimers);
+      persist({ ...data }, nextTimers);
+      return;
+    }
+
     const input = window.prompt("Set timer in minutes", "30");
     if (input === null) return;
 
