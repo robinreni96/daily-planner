@@ -582,12 +582,58 @@ textarea {
 }
 
 .task-actions {
+  position: relative;
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
   justify-content: flex-end;
-  align-items: center;
-  gap: 4px;
+  align-items: flex-start;
+}
+
+.task-menu-trigger {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: #3b4a67;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.task-menu-panel {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  min-width: 180px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 14px 28px rgba(16, 31, 56, 0.16);
+  z-index: 8;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+}
+
+.task-menu-item {
+  border: 0;
+  background: transparent;
+  color: #2f425f;
+  text-align: left;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 8px 9px;
+  cursor: pointer;
+}
+
+.task-menu-item:hover {
+  background: #eff4ff;
+}
+
+.task-menu-item.danger {
+  color: #b13a3a;
 }
 
 .timer-btn {
@@ -857,6 +903,11 @@ textarea {
 
   .task-actions {
     justify-content: flex-start;
+  }
+
+  .task-menu-panel {
+    right: auto;
+    left: 0;
   }
 
   .timer-modal {

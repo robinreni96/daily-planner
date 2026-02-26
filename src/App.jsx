@@ -162,6 +162,7 @@ export default function App() {
   const [showAllTasks, setShowAllTasks] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [draggingId, setDraggingId] = useState(null);
+  const [openTaskMenuId, setOpenTaskMenuId] = useState(null);
   const [isStateLoaded, setIsStateLoaded] = useState(false);
   const [pomodoroTimers, setPomodoroTimers] = useState(createDefaultState().pomodoroTimers);
   const [focusedTaskId, setFocusedTaskId] = useState(null);
@@ -269,6 +270,13 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [focusedTaskId]);
+
+  useEffect(() => {
+    if (!openTaskMenuId) return undefined;
+    const onDocumentClick = () => setOpenTaskMenuId(null);
+    document.addEventListener("click", onDocumentClick);
+    return () => document.removeEventListener("click", onDocumentClick);
+  }, [openTaskMenuId]);
 
   useEffect(() => {
     if (!focusedTaskId) return;
@@ -865,68 +873,74 @@ export default function App() {
                         <div className="task-actions">
                           <button
                             type="button"
-                            className={`timer-btn ${timer.isRunning ? "running" : ""}`}
-                            aria-label={timer.isRunning ? "Pause pomodoro timer" : "Start pomodoro timer"}
-                            title={timer.isRunning ? "Pause timer" : "Start timer"}
+                            className="task-menu-trigger"
+                            aria-label="Open task options"
+                            title="Task options"
                             onClick={(event) => {
                               event.stopPropagation();
-                              if (timer.isRunning) {
-                                pausePomodoro(task.id);
-                              } else {
-                                startPomodoro(task.id);
-                              }
+                              setOpenTaskMenuId((current) => (current === task.id ? null : task.id));
                             }}
                           >
-                            {timer.isRunning ? "Pause" : "Start"}
+                            ⋮
                           </button>
-                          <button
-                            type="button"
-                            className="timer-btn reset"
-                            aria-label="Reset pomodoro timer"
-                            title="Reset timer"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              resetPomodoro(task.id);
-                            }}
-                          >
-                            Reset
-                          </button>
-                          <button
-                            type="button"
-                            className={`icon-btn complete ${task.done ? "active" : ""}`}
-                            aria-label={task.done ? "Mark pending" : "Mark complete"}
-                            title={task.done ? "Mark pending" : "Mark complete"}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toggleDone(task.id);
-                            }}
-                          >
-                            ✓
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-btn forward"
-                            aria-label="Clone to next day"
-                            title="Clone to next day"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              cloneTaskToNextDay(task.id);
-                            }}
-                          >
-                            ⧉
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-btn delete"
-                            aria-label={task.hidden ? "Restore task" : "Hide task"}
-                            title={task.hidden ? "Restore task" : "Hide task"}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              task.hidden ? restoreTask(task.id) : hideTask(task.id);
-                            }}
-                          >
-                            {task.hidden ? "↺" : "🗑"}
-                          </button>
+                          {openTaskMenuId === task.id && (
+                            <div className="task-menu-panel" onClick={(event) => event.stopPropagation()}>
+                              <button
+                                type="button"
+                                className="task-menu-item"
+                                onClick={() => {
+                                  if (timer.isRunning) {
+                                    pausePomodoro(task.id);
+                                  } else {
+                                    startPomodoro(task.id);
+                                  }
+                                  setOpenTaskMenuId(null);
+                                }}
+                              >
+                                {timer.isRunning ? "Pause Timer" : "Start Timer"}
+                              </button>
+                              <button
+                                type="button"
+                                className="task-menu-item"
+                                onClick={() => {
+                                  resetPomodoro(task.id);
+                                  setOpenTaskMenuId(null);
+                                }}
+                              >
+                                Reset Timer
+                              </button>
+                              <button
+                                type="button"
+                                className="task-menu-item"
+                                onClick={() => {
+                                  toggleDone(task.id);
+                                  setOpenTaskMenuId(null);
+                                }}
+                              >
+                                {task.done ? "Mark Pending" : "Mark Complete"}
+                              </button>
+                              <button
+                                type="button"
+                                className="task-menu-item"
+                                onClick={() => {
+                                  cloneTaskToNextDay(task.id);
+                                  setOpenTaskMenuId(null);
+                                }}
+                              >
+                                Clone to Next Day
+                              </button>
+                              <button
+                                type="button"
+                                className="task-menu-item danger"
+                                onClick={() => {
+                                  task.hidden ? restoreTask(task.id) : hideTask(task.id);
+                                  setOpenTaskMenuId(null);
+                                }}
+                              >
+                                {task.hidden ? "Restore Task" : "Hide Task"}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </li>
                     );
