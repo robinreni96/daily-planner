@@ -487,6 +487,7 @@ textarea {
   align-items: center;
   animation: taskEnter 0.26s ease;
   transition: transform 0.16s ease, box-shadow 0.16s ease;
+  cursor: pointer;
 }
 
 .task:hover {
@@ -567,11 +568,79 @@ textarea {
   color: #62708c;
 }
 
+.pomodoro-time {
+  margin-top: 7px;
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: #264780;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.pomodoro-time.running {
+  color: #1f7a41;
+}
+
 .task-actions {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 4px;
+}
+
+.timer-btn {
+  height: 30px;
+  min-width: 58px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: linear-gradient(120deg, #eff5ff, #e9f4ff);
+  color: #2e5699;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.timer-btn:hover {
+  transform: scale(1.03);
+}
+
+.timer-btn.running {
+  background: linear-gradient(120deg, #e8f8ef, #ecfbf2);
+  border-color: #badfc8;
+  color: #206d3b;
+}
+
+.timer-btn.reset {
+  background: #f5f7fb;
+  border-color: #d8dfec;
+  color: #4c5c79;
+}
+
+.timer-btn.modal-primary {
+  min-width: 180px;
+  height: 44px;
+  font-size: 0.9rem;
+  border-radius: 12px;
+  background: linear-gradient(120deg, #2f69f3, #4b95ff);
+  color: #fff;
+  border-color: #2f69f3;
+}
+
+.timer-btn.modal-primary.running {
+  background: linear-gradient(120deg, #1e9b63, #36be7d);
+  border-color: #1e9b63;
+  color: #fff;
+}
+
+.timer-btn.modal-secondary {
+  min-width: 120px;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 0.9rem;
 }
 
 .icon-btn {
@@ -620,6 +689,116 @@ textarea {
   text-align: center;
   color: var(--muted);
   background: #fff;
+}
+
+.timer-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 24, 45, 0.58);
+  backdrop-filter: blur(7px);
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.timer-modal {
+  width: min(720px, 96vw);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  background: linear-gradient(145deg, #f8fbff, #eef5ff 52%, #f7fcff);
+  box-shadow: 0 28px 80px rgba(7, 19, 39, 0.35);
+  padding: 22px 24px 24px;
+  position: relative;
+  text-align: center;
+}
+
+.timer-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid #cfddf8;
+  background: #ffffffd6;
+  color: #294777;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.timer-modal-kicker {
+  margin: 0;
+  color: #54709c;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 800;
+}
+
+.timer-modal h2 {
+  margin: 8px 0 6px;
+  font-size: clamp(1.25rem, 2.8vw, 1.8rem);
+}
+
+.timer-modal-meta {
+  margin: 0;
+  color: #5d7293;
+  font-size: 0.9rem;
+}
+
+.timer-modal-clock {
+  margin: 0;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  z-index: 2;
+  pointer-events: none;
+  font-size: clamp(1.9rem, 6.5vw, 3.4rem);
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #17396f;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-circle-wrap {
+  width: 270px;
+  height: 270px;
+  margin: 14px auto 6px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.timer-circle {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.timer-circle-bg {
+  fill: none;
+  stroke: #d8e5fa;
+  stroke-width: 10;
+}
+
+.timer-circle-progress {
+  fill: none;
+  stroke: #3976ea;
+  stroke-width: 10;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+.timer-modal-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 1120px) {
@@ -679,6 +858,22 @@ textarea {
   .task-actions {
     justify-content: flex-start;
   }
+
+  .timer-modal {
+    width: 100%;
+    border-radius: 18px;
+    padding: 16px 14px 16px;
+  }
+
+  .timer-circle-wrap {
+    width: 220px;
+    height: 220px;
+  }
+
+  .timer-modal-clock {
+    font-size: clamp(1.5rem, 8vw, 2.4rem);
+  }
+
 }
 
 @keyframes taskEnter {

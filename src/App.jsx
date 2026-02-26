@@ -5,6 +5,7 @@ const IST_TIMEZONE = "Asia/Kolkata";
 const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 };
 const DEFAULT_CATEGORY_COLOR = "#4f8dfd";
 const ALLOWED_SORT_BY = new Set(["priority", "category", "taskType", "createdAt", "manual"]);
+const DEFAULT_POMODORO_SECONDS = 30 * 60;
 
 function getTodayDateIST() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -54,6 +55,41 @@ function toRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function formatSeconds(totalSeconds) {
+  const safe = Math.max(0, Number(totalSeconds) || 0);
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function normalizePomodoroTimers(rawTimers) {
+  if (!rawTimers || typeof rawTimers !== "object") return {};
+
+  const normalized = {};
+  Object.entries(rawTimers).forEach(([taskId, timer]) => {
+    if (!taskId || !timer || typeof timer !== "object") return;
+
+    const durationCandidate = Number(timer.durationSeconds);
+    const durationSeconds =
+      Number.isFinite(durationCandidate) && durationCandidate > 0
+        ? Math.floor(durationCandidate)
+        : DEFAULT_POMODORO_SECONDS;
+
+    const remainingCandidate = Number(timer.remainingSeconds);
+    const remainingSeconds = Number.isFinite(remainingCandidate)
+      ? Math.max(0, Math.min(durationSeconds, Math.floor(remainingCandidate)))
+      : durationSeconds;
+
+    normalized[taskId] = {
+      remainingSeconds,
+      durationSeconds,
+      isRunning: Boolean(timer.isRunning) && remainingSeconds > 0
+    };
+  });
+
+  return normalized;
+}
+
 function createDefaultState() {
   const today = getTodayDateIST();
   return {
@@ -61,7 +97,8 @@ function createDefaultState() {
     categories: ["General"],
     categoryColors: { General: DEFAULT_CATEGORY_COLOR },
     selectedDate: today,
-    sortBy: "priority"
+    sortBy: "priority",
+    pomodoroTimers: {}
   };
 }
 
@@ -93,7 +130,8 @@ function normalizeState(raw) {
     categories: categories.length ? categories : fallback.categories,
     categoryColors: buildCategoryColors(raw.categoryColors, categories),
     selectedDate: typeof raw.selectedDate === "string" && raw.selectedDate ? raw.selectedDate : fallback.selectedDate,
-    sortBy: ALLOWED_SORT_BY.has(raw.sortBy) ? raw.sortBy : fallback.sortBy
+    sortBy: ALLOWED_SORT_BY.has(raw.sortBy) ? raw.sortBy : fallback.sortBy,
+    pomodoroTimers: normalizePomodoroTimers(raw.pomodoroTimers)
   };
 }
 
@@ -124,6 +162,13 @@ export default function App() {
   const [showAllTasks, setShowAllTasks] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [draggingId, setDraggingId] = useState(null);
+  const [isStateLoaded, setIsStateLoaded] = useState(false);
+  const [pomodoroTimers, setPomodoroTimers] = useState(createDefaultState().pomodoroTimers);
+  const [focusedTaskId, setFocusedTaskId] = useState(null);
+  const hasRunningPomodoro = useMemo(
+    () => Object.values(pomodoroTimers).some((timer) => timer?.isRunning),
+    [pomodoroTimers]
+  );
 
   const [newCategory, setNewCategory] = useState("");
   const [newCategoryColor, setNewCategoryColor] = useState(DEFAULT_CATEGORY_COLOR);
@@ -139,9 +184,13 @@ export default function App() {
     meetingAmPm: "AM"
   });
 
-  function persist(next) {
-    setData(next);
-    saveStateToDb(next).catch((error) => {
+  function persist(next, pomodoroTimersOverride = pomodoroTimers) {
+    const withTimers = {
+      ...next,
+      pomodoroTimers: pomodoroTimersOverride
+    };
+    setData(withTimers);
+    saveStateToDb(withTimers).catch((error) => {
       console.error("Failed to persist state to DB:", error);
     });
   }
@@ -153,20 +202,79 @@ export default function App() {
         if (isCancelled) return;
         setData(loaded);
         setSortBy(loaded.sortBy || "priority");
+        setPomodoroTimers(loaded.pomodoroTimers || {});
         setForm((prev) => ({
           ...prev,
           category: loaded.categories[0] || "General",
           taskDate: loaded.selectedDate || today
         }));
+        setIsStateLoaded(true);
       })
       .catch((error) => {
         console.error("Failed to load state from DB:", error);
+        if (!isCancelled) setIsStateLoaded(true);
       });
 
     return () => {
       isCancelled = true;
     };
   }, [today]);
+
+  useEffect(() => {
+    if (!hasRunningPomodoro) return undefined;
+
+    const intervalId = setInterval(() => {
+      setPomodoroTimers((prev) => {
+        let hasChange = false;
+        const next = { ...prev };
+
+        Object.entries(prev).forEach(([taskId, timer]) => {
+          if (!timer?.isRunning) return;
+
+          const current = Number(timer.remainingSeconds ?? DEFAULT_POMODORO_SECONDS);
+          const durationSeconds = Number(timer.durationSeconds ?? DEFAULT_POMODORO_SECONDS);
+          const remainingSeconds = Math.max(current - 1, 0);
+          const isRunning = remainingSeconds > 0;
+
+          if (remainingSeconds !== current || isRunning !== timer.isRunning) {
+            hasChange = true;
+            next[taskId] = { ...timer, durationSeconds, remainingSeconds, isRunning };
+          }
+        });
+
+        return hasChange ? next : prev;
+      });
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [hasRunningPomodoro]);
+
+  useEffect(() => {
+    if (!isStateLoaded) return;
+    setData((prev) => {
+      if (prev.pomodoroTimers === pomodoroTimers) return prev;
+      const next = { ...prev, pomodoroTimers };
+      saveStateToDb(next).catch((error) => {
+        console.error("Failed to persist timer state to DB:", error);
+      });
+      return next;
+    });
+  }, [pomodoroTimers, isStateLoaded]);
+
+  useEffect(() => {
+    if (!focusedTaskId) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setFocusedTaskId(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [focusedTaskId]);
+
+  useEffect(() => {
+    if (!focusedTaskId) return;
+    const exists = data.tasks.some((task) => task.id === focusedTaskId);
+    if (!exists) setFocusedTaskId(null);
+  }, [data.tasks, focusedTaskId]);
 
   function updateForm(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -356,6 +464,69 @@ export default function App() {
     persist({ ...data, sortBy: safeValue });
   }
 
+  function getPomodoroTimer(taskId) {
+    const timer = pomodoroTimers[taskId];
+    const durationSeconds = Number(timer?.durationSeconds ?? DEFAULT_POMODORO_SECONDS);
+    return {
+      remainingSeconds: Number(timer?.remainingSeconds ?? DEFAULT_POMODORO_SECONDS),
+      durationSeconds,
+      isRunning: Boolean(timer?.isRunning)
+    };
+  }
+
+  function hasPomodoroStarted(taskId) {
+    return Boolean(pomodoroTimers[taskId]);
+  }
+
+  function startPomodoro(taskId) {
+    const input = window.prompt("Set timer in minutes", "30");
+    if (input === null) return;
+
+    const minutes = Number.parseInt(input, 10);
+    const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : 30;
+    const durationSeconds = safeMinutes * 60;
+    const nextTimers = {
+      ...pomodoroTimers,
+      [taskId]: {
+        remainingSeconds: durationSeconds,
+        durationSeconds,
+        isRunning: true
+      }
+    };
+    setPomodoroTimers(nextTimers);
+    persist({ ...data }, nextTimers);
+  }
+
+  function pausePomodoro(taskId) {
+    const current = pomodoroTimers[taskId] || {
+        remainingSeconds: DEFAULT_POMODORO_SECONDS,
+        durationSeconds: DEFAULT_POMODORO_SECONDS,
+        isRunning: false
+      };
+
+    const nextTimers = {
+      ...pomodoroTimers,
+      [taskId]: { ...current, isRunning: false }
+    };
+    setPomodoroTimers(nextTimers);
+    persist({ ...data }, nextTimers);
+  }
+
+  function resetPomodoro(taskId) {
+    if (!pomodoroTimers[taskId]) return;
+    const nextTimers = { ...pomodoroTimers };
+    delete nextTimers[taskId];
+    setPomodoroTimers(nextTimers);
+    persist({ ...data }, nextTimers);
+  }
+
+  function getPomodoroProgressPercent(remainingSeconds, durationSeconds) {
+    const safeDuration = Math.max(1, Number(durationSeconds) || DEFAULT_POMODORO_SECONDS);
+    const remaining = Math.max(0, Math.min(safeDuration, Number(remainingSeconds) || 0));
+    const elapsed = safeDuration - remaining;
+    return Math.round((elapsed / safeDuration) * 100);
+  }
+
   function changeSelectedDate(value) {
     const selectedDate = value || today;
     const next = { ...data, selectedDate };
@@ -444,6 +615,10 @@ export default function App() {
     });
     return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
   }, [visibleTasks]);
+  const focusedTask = useMemo(
+    () => data.tasks.find((task) => task.id === focusedTaskId) || null,
+    [data.tasks, focusedTaskId]
+  );
 
   return (
     <main className="app-shell">
@@ -655,60 +830,107 @@ export default function App() {
                 </div>
 
                 <ul className="task-list">
-                  {tasks.map((task) => (
-                    <li
-                      key={task.id}
-                      className={`task ${task.done ? "done" : ""}`}
-                      draggable
-                      onDragStart={() => setDraggingId(task.id)}
-                      onDragOver={(event) => event.preventDefault()}
-                      onDrop={() => reorderTasksWithinDay(draggingId, task.id)}
-                      onDragEnd={() => setDraggingId(null)}
-                    >
-                      <div>
-                        <div className="task-title">{task.name}</div>
-                        <div className="task-desc">{task.description || "No description"}</div>
-                        <div className="meta">
-                          {task.hidden && <span className="pill hidden-pill">Hidden</span>}
-                          <span className={`pill tasktype-${task.taskType.toLowerCase()}`}>{task.taskType}</span>
-                          <span className={`pill priority-${task.priority.toLowerCase()}`}>{task.priority}</span>
-                          {task.taskType === "Meeting" && task.meetingTime && (
-                            <span className="pill">{task.meetingTime}</span>
+                  {tasks.map((task) => {
+                    const timer = getPomodoroTimer(task.id);
+                    const isTimerVisible = hasPomodoroStarted(task.id);
+                    return (
+                      <li
+                        key={task.id}
+                        className={`task ${task.done ? "done" : ""}`}
+                        draggable
+                        onDragStart={() => setDraggingId(task.id)}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={() => reorderTasksWithinDay(draggingId, task.id)}
+                        onDragEnd={() => setDraggingId(null)}
+                        onClick={() => setFocusedTaskId(task.id)}
+                      >
+                        <div>
+                          <div className="task-title">{task.name}</div>
+                          <div className="task-desc">{task.description || "No description"}</div>
+                          {isTimerVisible && (
+                            <div className={`pomodoro-time ${timer.isRunning ? "running" : ""}`}>
+                              {formatSeconds(timer.remainingSeconds)}
+                            </div>
                           )}
+                          <div className="meta">
+                            {task.hidden && <span className="pill hidden-pill">Hidden</span>}
+                            <span className={`pill tasktype-${task.taskType.toLowerCase()}`}>{task.taskType}</span>
+                            <span className={`pill priority-${task.priority.toLowerCase()}`}>{task.priority}</span>
+                            {task.taskType === "Meeting" && task.meetingTime && (
+                              <span className="pill">{task.meetingTime}</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="task-actions">
-                        <button
-                          type="button"
-                          className={`icon-btn complete ${task.done ? "active" : ""}`}
-                          aria-label={task.done ? "Mark pending" : "Mark complete"}
-                          title={task.done ? "Mark pending" : "Mark complete"}
-                          onClick={() => toggleDone(task.id)}
-                        >
-                          ✓
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-btn forward"
-                          aria-label="Clone to next day"
-                          title="Clone to next day"
-                          onClick={() => cloneTaskToNextDay(task.id)}
-                        >
-                          ⧉
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-btn delete"
-                          aria-label={task.hidden ? "Restore task" : "Hide task"}
-                          title={task.hidden ? "Restore task" : "Hide task"}
-                          onClick={() => (task.hidden ? restoreTask(task.id) : hideTask(task.id))}
-                        >
-                          {task.hidden ? "↺" : "🗑"}
-                        </button>
-                      </div>
-                    </li>
-                  ))}
+                        <div className="task-actions">
+                          <button
+                            type="button"
+                            className={`timer-btn ${timer.isRunning ? "running" : ""}`}
+                            aria-label={timer.isRunning ? "Pause pomodoro timer" : "Start pomodoro timer"}
+                            title={timer.isRunning ? "Pause timer" : "Start timer"}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (timer.isRunning) {
+                                pausePomodoro(task.id);
+                              } else {
+                                startPomodoro(task.id);
+                              }
+                            }}
+                          >
+                            {timer.isRunning ? "Pause" : "Start"}
+                          </button>
+                          <button
+                            type="button"
+                            className="timer-btn reset"
+                            aria-label="Reset pomodoro timer"
+                            title="Reset timer"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              resetPomodoro(task.id);
+                            }}
+                          >
+                            Reset
+                          </button>
+                          <button
+                            type="button"
+                            className={`icon-btn complete ${task.done ? "active" : ""}`}
+                            aria-label={task.done ? "Mark pending" : "Mark complete"}
+                            title={task.done ? "Mark pending" : "Mark complete"}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleDone(task.id);
+                            }}
+                          >
+                            ✓
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-btn forward"
+                            aria-label="Clone to next day"
+                            title="Clone to next day"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              cloneTaskToNextDay(task.id);
+                            }}
+                          >
+                            ⧉
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-btn delete"
+                            aria-label={task.hidden ? "Restore task" : "Hide task"}
+                            title={task.hidden ? "Restore task" : "Hide task"}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              task.hidden ? restoreTask(task.id) : hideTask(task.id);
+                            }}
+                          >
+                            {task.hidden ? "↺" : "🗑"}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             ))}
@@ -801,6 +1023,77 @@ export default function App() {
           </aside>
         </section>
       </section>
+
+      {focusedTask && (() => {
+        const timer = getPomodoroTimer(focusedTask.id);
+        const progressPercent = getPomodoroProgressPercent(
+          timer.remainingSeconds,
+          timer.durationSeconds
+        );
+        return (
+          <div className="timer-modal-backdrop" role="presentation" onClick={() => setFocusedTaskId(null)}>
+            <section
+              className="timer-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Pomodoro timer for ${focusedTask.name}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="timer-modal-close"
+                onClick={() => setFocusedTaskId(null)}
+                aria-label="Close timer screen"
+              >
+                ✕
+              </button>
+              <p className="timer-modal-kicker">Focused Session</p>
+              <h2>{focusedTask.name}</h2>
+              <p className="timer-modal-meta">
+                {focusedTask.category} • {focusedTask.taskType} • {focusedTask.priority}
+              </p>
+              <div className="timer-circle-wrap">
+                <svg className="timer-circle" viewBox="0 0 120 120" aria-hidden="true">
+                  <circle className="timer-circle-bg" cx="60" cy="60" r="52" />
+                  <circle
+                    className="timer-circle-progress"
+                    cx="60"
+                    cy="60"
+                    r="52"
+                    style={{
+                      strokeDasharray: `${2 * Math.PI * 52}`,
+                      strokeDashoffset: `${2 * Math.PI * 52 * (1 - progressPercent / 100)}`
+                    }}
+                  />
+                </svg>
+                <div className="timer-modal-clock">{formatSeconds(timer.remainingSeconds)}</div>
+              </div>
+              <div className="timer-modal-actions">
+                <button
+                  type="button"
+                  className={`timer-btn modal-primary ${timer.isRunning ? "running" : ""}`}
+                  onClick={() => {
+                    if (timer.isRunning) {
+                      pausePomodoro(focusedTask.id);
+                    } else {
+                      startPomodoro(focusedTask.id);
+                    }
+                  }}
+                >
+                  {timer.isRunning ? "Pause Timer" : "Start Timer"}
+                </button>
+                <button
+                  type="button"
+                  className="timer-btn modal-secondary"
+                  onClick={() => resetPomodoro(focusedTask.id)}
+                >
+                  Reset
+                </button>
+              </div>
+            </section>
+          </div>
+        );
+      })()}
     </main>
   );
 }

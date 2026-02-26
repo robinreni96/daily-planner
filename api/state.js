@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 const IST_TIMEZONE = "Asia/Kolkata";
 const DEFAULT_CATEGORY_COLOR = "#4f8dfd";
 const ALLOWED_SORT_BY = new Set(["priority", "category", "taskType", "createdAt", "manual"]);
+const DEFAULT_POMODORO_SECONDS = 30 * 60;
 
 const connectionString =
   process.env.POSTGRES_URL ||
@@ -34,8 +35,37 @@ const defaultState = {
   categories: ["General"],
   categoryColors: { General: DEFAULT_CATEGORY_COLOR },
   selectedDate: getTodayDateIST(),
-  sortBy: "priority"
+  sortBy: "priority",
+  pomodoroTimers: {}
 };
+
+function normalizePomodoroTimers(rawTimers) {
+  if (!rawTimers || typeof rawTimers !== "object") return {};
+
+  const timers = {};
+  for (const [taskId, timer] of Object.entries(rawTimers)) {
+    if (!taskId || !timer || typeof timer !== "object") continue;
+
+    const durationCandidate = Number(timer.durationSeconds);
+    const durationSeconds =
+      Number.isFinite(durationCandidate) && durationCandidate > 0
+        ? Math.floor(durationCandidate)
+        : DEFAULT_POMODORO_SECONDS;
+
+    const remainingCandidate = Number(timer.remainingSeconds);
+    const remainingSeconds = Number.isFinite(remainingCandidate)
+      ? Math.max(0, Math.min(durationSeconds, Math.floor(remainingCandidate)))
+      : durationSeconds;
+
+    timers[taskId] = {
+      remainingSeconds,
+      durationSeconds,
+      isRunning: Boolean(timer.isRunning) && remainingSeconds > 0
+    };
+  }
+
+  return timers;
+}
 
 function normalizeState(payload) {
   const categoriesInput = Array.isArray(payload?.categories)
@@ -93,7 +123,8 @@ function normalizeState(payload) {
     categories,
     categoryColors,
     selectedDate: String(payload?.selectedDate || getTodayDateIST()),
-    sortBy: ALLOWED_SORT_BY.has(payload?.sortBy) ? payload.sortBy : defaultState.sortBy
+    sortBy: ALLOWED_SORT_BY.has(payload?.sortBy) ? payload.sortBy : defaultState.sortBy,
+    pomodoroTimers: normalizePomodoroTimers(payload?.pomodoroTimers)
   };
 }
 
