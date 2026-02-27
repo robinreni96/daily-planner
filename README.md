@@ -121,3 +121,13 @@ cp data/planner.db.backup data/planner.db
 - `npm run build` - build frontend bundle
 - `npm run start` - start production server
 - `npm run preview` - Vite preview (frontend only)
+
+## Cross-Platform Usage (macOS / Windows / Mobile)
+This app now supports PWA install, so it can run like an app across platforms:
+- macOS/Windows: Open in Chrome/Edge and use `Install app` from the browser address bar/menu.
+- iPhone/iPad (Safari): Share -> `Add to Home Screen`.
+- Android (Chrome): `Add to Home Screen` / `Install app`.
+
+PWA files included:
+- `public/manifest.webmanifest`
+- `public/sw.js`
