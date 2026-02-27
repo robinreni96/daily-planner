@@ -201,13 +201,14 @@ export default function App() {
     fetchStateFromDb()
       .then((loaded) => {
         if (isCancelled) return;
-        setData(loaded);
+        const landingState = { ...loaded, selectedDate: today };
+        setData(landingState);
         setSortBy(loaded.sortBy || "priority");
         setPomodoroTimers(loaded.pomodoroTimers || {});
         setForm((prev) => ({
           ...prev,
           category: loaded.categories[0] || "General",
-          taskDate: loaded.selectedDate || today
+          taskDate: today
         }));
         setIsStateLoaded(true);
       })
