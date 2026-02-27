@@ -413,9 +413,24 @@ export default function App() {
     persist({ ...data, tasks });
   }
 
+  function moveTaskToNextDay(taskId) {
+    const tasks = data.tasks.map((task) =>
+      task.id === taskId
+        ? {
+            ...task,
+            date: getNextDate(task.date),
+            done: false,
+            hidden: false
+          }
+        : task
+    );
+    persist({ ...data, tasks });
+  }
+
   function cloneTaskToNextDay(taskId) {
     const source = data.tasks.find((task) => task.id === taskId);
     if (!source) return;
+
     const clone = {
       ...source,
       id: crypto.randomUUID(),
@@ -424,8 +439,8 @@ export default function App() {
       hidden: false,
       createdAt: Date.now()
     };
-    const tasks = [...data.tasks, clone];
-    persist({ ...data, tasks });
+
+    persist({ ...data, tasks: [...data.tasks, clone] });
   }
 
   function reorderTasksWithinDay(sourceId, targetId) {
@@ -940,6 +955,16 @@ export default function App() {
                                 }}
                               >
                                 Clone to Next Day
+                              </button>
+                              <button
+                                type="button"
+                                className="task-menu-item"
+                                onClick={() => {
+                                  moveTaskToNextDay(task.id);
+                                  setOpenTaskMenuId(null);
+                                }}
+                              >
+                                Move to Next Day
                               </button>
                               <button
                                 type="button"
