@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const API_STATE_PATH = "/api/state";
 const IST_TIMEZONE = "Asia/Kolkata";
@@ -186,6 +186,8 @@ export default function App() {
   const [isStateLoaded, setIsStateLoaded] = useState(false);
   const [pomodoroTimers, setPomodoroTimers] = useState(createDefaultState().pomodoroTimers);
   const [focusedTaskId, setFocusedTaskId] = useState(null);
+  const queuedSaveRef = useRef(null);
+  const isSaveInFlightRef = useRef(false);
   const hasRunningPomodoro = useMemo(
     () => Object.values(pomodoroTimers).some((timer) => timer?.isRunning),
     [pomodoroTimers]
@@ -205,15 +207,37 @@ export default function App() {
     meetingAmPm: "AM"
   });
 
+  function queuePersistState(nextState, errorMessage = "Failed to persist state to DB:") {
+    queuedSaveRef.current = nextState;
+    if (isSaveInFlightRef.current) return;
+
+    isSaveInFlightRef.current = true;
+    void (async function flushSaveQueue() {
+      while (queuedSaveRef.current) {
+        const snapshot = queuedSaveRef.current;
+        queuedSaveRef.current = null;
+
+        try {
+          await saveStateToDb(snapshot);
+        } catch (error) {
+          console.error(errorMessage, error);
+        }
+      }
+
+      isSaveInFlightRef.current = false;
+      if (queuedSaveRef.current) {
+        queuePersistState(queuedSaveRef.current, errorMessage);
+      }
+    })();
+  }
+
   function persist(next, pomodoroTimersOverride = pomodoroTimers) {
     const withTimers = {
       ...next,
       pomodoroTimers: pomodoroTimersOverride
     };
     setData(withTimers);
-    saveStateToDb(withTimers).catch((error) => {
-      console.error("Failed to persist state to DB:", error);
-    });
+    queuePersistState(withTimers);
   }
 
   useEffect(() => {
@@ -225,9 +249,7 @@ export default function App() {
         const stateWithCarryForward = autoCarryForwardPendingTasks(landingState, today);
         const didCarryForward = stateWithCarryForward !== landingState;
         if (didCarryForward) {
-          saveStateToDb(stateWithCarryForward).catch((error) => {
-            console.error("Failed to persist auto carry-forward state to DB:", error);
-          });
+          queuePersistState(stateWithCarryForward, "Failed to persist auto carry-forward state to DB:");
         }
         setData(stateWithCarryForward);
         setSortBy(stateWithCarryForward.sortBy || "priority");
@@ -283,9 +305,7 @@ export default function App() {
     setData((prev) => {
       if (prev.pomodoroTimers === pomodoroTimers) return prev;
       const next = { ...prev, pomodoroTimers };
-      saveStateToDb(next).catch((error) => {
-        console.error("Failed to persist timer state to DB:", error);
-      });
+      queuePersistState(next, "Failed to persist timer state to DB:");
       return next;
     });
   }, [pomodoroTimers, isStateLoaded]);
