@@ -38,13 +38,6 @@ function parseMeetingMinutes(timeLabel) {
   return hour * 60 + Number(match[2]);
 }
 
-function getNextDate(dateStr) {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const utcDate = new Date(Date.UTC(year, month - 1, day));
-  utcDate.setUTCDate(utcDate.getUTCDate() + 1);
-  return utcDate.toISOString().slice(0, 10);
-}
-
 function toRgba(hex, alpha) {
   if (!hex || typeof hex !== "string") return `rgba(79,141,253,${alpha})`;
   const cleaned = hex.replace("#", "");
@@ -448,34 +441,15 @@ export default function App() {
     persist({ ...data, tasks });
   }
 
-  function moveTaskToNextDay(taskId) {
-    const tasks = data.tasks.map((task) =>
-      task.id === taskId
-        ? {
-            ...task,
-            date: getNextDate(task.date),
-            done: false,
-            hidden: false
-          }
-        : task
-    );
-    persist({ ...data, tasks });
-  }
-
-  function cloneTaskToNextDay(taskId) {
-    const source = data.tasks.find((task) => task.id === taskId);
-    if (!source) return;
-
-    const clone = {
-      ...source,
-      id: crypto.randomUUID(),
-      date: getNextDate(source.date),
-      done: false,
-      hidden: false,
-      createdAt: Date.now()
-    };
-
-    persist({ ...data, tasks: [...data.tasks, clone] });
+  function deleteTask(taskId) {
+    const tasks = data.tasks.filter((task) => task.id !== taskId);
+    const nextTimers = { ...pomodoroTimers };
+    delete nextTimers[taskId];
+    setPomodoroTimers(nextTimers);
+    persist({ ...data, tasks }, nextTimers);
+    if (focusedTaskId === taskId) {
+      setFocusedTaskId(null);
+    }
   }
 
   function reorderTasksWithinDay(sourceId, targetId) {
@@ -989,21 +963,11 @@ export default function App() {
                                 type="button"
                                 className="task-menu-item"
                                 onClick={() => {
-                                  cloneTaskToNextDay(task.id);
+                                  deleteTask(task.id);
                                   setOpenTaskMenuId(null);
                                 }}
                               >
-                                Clone to Next Day
-                              </button>
-                              <button
-                                type="button"
-                                className="task-menu-item"
-                                onClick={() => {
-                                  moveTaskToNextDay(task.id);
-                                  setOpenTaskMenuId(null);
-                                }}
-                              >
-                                Move to Next Day
+                                Delete Task
                               </button>
                               <button
                                 type="button"
