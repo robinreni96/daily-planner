@@ -90,6 +90,33 @@ function normalizePomodoroTimers(rawTimers) {
   return normalized;
 }
 
+function autoCarryForwardPendingTasks(state, targetDate) {
+  const tasks = Array.isArray(state?.tasks) ? state.tasks : [];
+  const todayTasks = tasks.filter((task) => task?.date === targetDate);
+  const todayMaxOrder = todayTasks.reduce((max, task, index) => {
+    const orderValue = Number.isFinite(Number(task?.order)) ? Number(task.order) : index;
+    return Math.max(max, orderValue);
+  }, -1);
+
+  let nextOrder = todayMaxOrder + 1;
+  let changed = false;
+
+  const nextTasks = tasks.map((task) => {
+    const taskDate = String(task?.date || "");
+    const shouldMove =
+      !task?.done &&
+      !task?.hidden &&
+      taskDate &&
+      taskDate < targetDate;
+
+    if (!shouldMove) return task;
+    changed = true;
+    return { ...task, date: targetDate, order: nextOrder++ };
+  });
+
+  return changed ? { ...state, tasks: nextTasks } : state;
+}
+
 function createDefaultState() {
   const today = getTodayDateIST();
   return {
@@ -202,12 +229,19 @@ export default function App() {
       .then((loaded) => {
         if (isCancelled) return;
         const landingState = { ...loaded, selectedDate: today };
-        setData(landingState);
-        setSortBy(loaded.sortBy || "priority");
-        setPomodoroTimers(loaded.pomodoroTimers || {});
+        const stateWithCarryForward = autoCarryForwardPendingTasks(landingState, today);
+        const didCarryForward = stateWithCarryForward !== landingState;
+        if (didCarryForward) {
+          saveStateToDb(stateWithCarryForward).catch((error) => {
+            console.error("Failed to persist auto carry-forward state to DB:", error);
+          });
+        }
+        setData(stateWithCarryForward);
+        setSortBy(stateWithCarryForward.sortBy || "priority");
+        setPomodoroTimers(stateWithCarryForward.pomodoroTimers || {});
         setForm((prev) => ({
           ...prev,
-          category: loaded.categories[0] || "General",
+          category: stateWithCarryForward.categories[0] || "General",
           taskDate: today
         }));
         setIsStateLoaded(true);
@@ -595,9 +629,13 @@ export default function App() {
   }
 
   const visibleTasks = useMemo(() => {
+    const isPastDayView = data.selectedDate < today;
     const filtered = data.tasks.filter((task) => {
       if (task.date !== data.selectedDate) return false;
-      if (!showAllTasks && task.hidden) return false;
+      if (!showAllTasks && task.hidden) {
+        const isPastClosedTask = isPastDayView && task.done;
+        if (!isPastClosedTask) return false;
+      }
       if (filterType !== "All" && task.taskType !== filterType) return false;
       if (filterCategory !== "All" && task.category !== filterCategory) return false;
       if (filterStatus === "Pending" && task.done) return false;
