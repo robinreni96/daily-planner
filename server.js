@@ -32,7 +32,8 @@ const defaultState = {
   categoryColors: { General: DEFAULT_CATEGORY_COLOR },
   selectedDate: getTodayDateIST(),
   sortBy: "priority",
-  pomodoroTimers: {}
+  pomodoroTimers: {},
+  activeTaskId: null
 };
 
 function normalizePomodoroTimers(rawTimers) {
@@ -110,6 +111,7 @@ function normalizeState(payload) {
       date: String(task.date || getTodayDateIST()),
       done: Boolean(task.done),
       hidden: Boolean(task.hidden),
+      inProgress: Boolean(task.inProgress) && !Boolean(task.done) && !Boolean(task.hidden),
       createdAt: Number(task.createdAt || Date.now()),
       order: Number.isFinite(Number(task.order)) ? Number(task.order) : index
     }));
@@ -120,7 +122,11 @@ function normalizeState(payload) {
     categoryColors,
     selectedDate: String(payload?.selectedDate || getTodayDateIST()),
     sortBy: ALLOWED_SORT_BY.has(payload?.sortBy) ? payload.sortBy : defaultState.sortBy,
-    pomodoroTimers: normalizePomodoroTimers(payload?.pomodoroTimers)
+    pomodoroTimers: normalizePomodoroTimers(payload?.pomodoroTimers),
+    activeTaskId:
+      typeof payload?.activeTaskId === "string" && safeTasks.some((task) => task.id === payload.activeTaskId)
+        ? payload.activeTaskId
+        : null
   };
 }
 

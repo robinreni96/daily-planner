@@ -444,6 +444,12 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 8px;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+}
+
+.category-group.dragging-category {
+  opacity: 0.65;
+  transform: scale(0.995);
 }
 
 .category-group-head {
@@ -454,6 +460,7 @@ textarea {
   border-radius: 10px;
   background: #ffffff;
   padding: 8px 10px;
+  cursor: grab;
 }
 
 .category-group-head h3 {
@@ -493,6 +500,12 @@ textarea {
 .task:hover {
   transform: translateY(-1px);
   box-shadow: 0 8px 20px rgba(19, 32, 50, 0.08);
+}
+
+.task.in-progress {
+  border-color: #95dbaf;
+  box-shadow: 0 10px 24px rgba(30, 155, 99, 0.12);
+  background: linear-gradient(145deg, #ffffff, #f5fff8);
 }
 
 .task.done .task-title {
@@ -566,6 +579,15 @@ textarea {
   background: #f1f3f7;
   border-color: #d8dde7;
   color: #62708c;
+}
+
+.pill.in-progress-pill {
+  background: #1f7a41;
+  border-color: #14532d;
+  color: #f4fff7;
+  font-weight: 700;
+  box-shadow: 0 0 0 rgba(31, 122, 65, 0);
+  animation: inProgressBadgePulse 2.4s ease-in-out infinite;
 }
 
 .pomodoro-time {
@@ -935,5 +957,21 @@ textarea {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes inProgressBadgePulse {
+  0%,
+  100% {
+    background: #14532d;
+    border-color: #0f3f22;
+    color: #effff4;
+    box-shadow: 0 0 0 0 rgba(20, 83, 45, 0.22);
+  }
+  50% {
+    background: #8ee6a8;
+    border-color: #4caf72;
+    color: #10351f;
+    box-shadow: 0 0 0 8px rgba(94, 201, 129, 0.16);
   }
 }

@@ -104,10 +104,38 @@ function autoCarryForwardPendingTasks(state, targetDate) {
 
     if (!shouldMove) return task;
     changed = true;
-    return { ...task, date: targetDate, order: nextOrder++ };
+    return { ...task, date: targetDate, order: nextOrder++, inProgress: false };
   });
 
   return changed ? { ...state, tasks: nextTasks } : state;
+}
+
+function getCategoryRankMap(categories) {
+  return new Map(categories.map((category, index) => [category, index]));
+}
+
+function orderTasksForDay(tasks, selectedDate, categories) {
+  const categoryRank = getCategoryRankMap(categories);
+  return tasks
+    .filter((task) => task.date === selectedDate)
+    .map((task, index) => ({
+      task,
+      orderValue: Number.isFinite(Number(task.order)) ? Number(task.order) : index,
+      categoryRank: categoryRank.get(task.category) ?? Number.MAX_SAFE_INTEGER
+    }))
+    .sort((a, b) => {
+      if (a.categoryRank !== b.categoryRank) return a.categoryRank - b.categoryRank;
+      return a.orderValue - b.orderValue;
+    })
+    .map((entry) => entry.task);
+}
+
+function setTaskProgressState(tasks, taskId, inProgress) {
+  return tasks.map((task) => {
+    if (task.id === taskId) return { ...task, inProgress };
+    if (inProgress && task.inProgress) return { ...task, inProgress: false };
+    return task;
+  });
 }
 
 function createDefaultState() {
@@ -118,7 +146,8 @@ function createDefaultState() {
     categoryColors: { General: DEFAULT_CATEGORY_COLOR },
     selectedDate: today,
     sortBy: "priority",
-    pomodoroTimers: {}
+    pomodoroTimers: {},
+    activeTaskId: null
   };
 }
 
@@ -141,17 +170,27 @@ function normalizeState(raw) {
   if (!raw || typeof raw !== "object") return fallback;
 
   const tasks = Array.isArray(raw.tasks) ? raw.tasks : [];
+  const normalizedTasks = tasks
+    .filter((task) => task && typeof task === "object")
+    .map((task) => ({
+      ...task,
+      inProgress: Boolean(task.inProgress) && !task.done && !task.hidden
+    }));
   const categories = Array.isArray(raw.categories)
     ? Array.from(new Set(raw.categories.map((x) => String(x || "").trim()).filter(Boolean)))
     : fallback.categories;
 
   return {
-    tasks,
+    tasks: normalizedTasks,
     categories: categories.length ? categories : fallback.categories,
     categoryColors: buildCategoryColors(raw.categoryColors, categories),
     selectedDate: typeof raw.selectedDate === "string" && raw.selectedDate ? raw.selectedDate : fallback.selectedDate,
     sortBy: ALLOWED_SORT_BY.has(raw.sortBy) ? raw.sortBy : fallback.sortBy,
-    pomodoroTimers: normalizePomodoroTimers(raw.pomodoroTimers)
+    pomodoroTimers: normalizePomodoroTimers(raw.pomodoroTimers),
+    activeTaskId:
+      typeof raw.activeTaskId === "string" && normalizedTasks.some((task) => task.id === raw.activeTaskId)
+        ? raw.activeTaskId
+        : null
   };
 }
 
@@ -182,10 +221,13 @@ export default function App() {
   const [showAllTasks, setShowAllTasks] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [draggingId, setDraggingId] = useState(null);
+  const [draggingCategory, setDraggingCategory] = useState(null);
   const [openTaskMenuId, setOpenTaskMenuId] = useState(null);
   const [isStateLoaded, setIsStateLoaded] = useState(false);
   const [pomodoroTimers, setPomodoroTimers] = useState(createDefaultState().pomodoroTimers);
+  const [activeTaskId, setActiveTaskId] = useState(createDefaultState().activeTaskId);
   const [focusedTaskId, setFocusedTaskId] = useState(null);
+  const activeTaskIdRef = useRef(createDefaultState().activeTaskId);
   const queuedSaveRef = useRef(null);
   const isSaveInFlightRef = useRef(false);
   const hasRunningPomodoro = useMemo(
@@ -234,7 +276,8 @@ export default function App() {
   function persist(next, pomodoroTimersOverride = pomodoroTimers) {
     const withTimers = {
       ...next,
-      pomodoroTimers: pomodoroTimersOverride
+      pomodoroTimers: pomodoroTimersOverride,
+      activeTaskId: next.activeTaskId ?? activeTaskIdRef.current
     };
     setData(withTimers);
     queuePersistState(withTimers);
@@ -254,6 +297,8 @@ export default function App() {
         setData(stateWithCarryForward);
         setSortBy(stateWithCarryForward.sortBy || "priority");
         setPomodoroTimers(stateWithCarryForward.pomodoroTimers || {});
+        activeTaskIdRef.current = stateWithCarryForward.activeTaskId || null;
+        setActiveTaskId(stateWithCarryForward.activeTaskId || null);
         setForm((prev) => ({
           ...prev,
           category: stateWithCarryForward.categories[0] || "General",
@@ -332,6 +377,16 @@ export default function App() {
     if (!exists) setFocusedTaskId(null);
   }, [data.tasks, focusedTaskId]);
 
+  useEffect(() => {
+    activeTaskIdRef.current = activeTaskId;
+  }, [activeTaskId]);
+
+  useEffect(() => {
+    if (!activeTaskId) return;
+    const exists = data.tasks.some((task) => task.id === activeTaskId);
+    if (!exists) setActiveTaskId(null);
+  }, [activeTaskId, data.tasks]);
+
   function updateForm(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
@@ -346,7 +401,7 @@ export default function App() {
       return;
     }
 
-    const categories = [...data.categories, name].sort((a, b) => a.localeCompare(b));
+    const categories = [...data.categories, name];
     const categoryColors = { ...data.categoryColors, [name]: newCategoryColor };
     const next = { ...data, categories, categoryColors };
     persist(next);
@@ -412,6 +467,7 @@ export default function App() {
       date,
       done: false,
       hidden: false,
+      inProgress: false,
       createdAt: Date.now()
     };
 
@@ -436,27 +492,55 @@ export default function App() {
     }));
   }
 
-  function toggleDone(taskId) {
+  function startTask(taskId) {
+    const tasks = setTaskProgressState(data.tasks, taskId, true).map((task) =>
+      task.id === taskId ? { ...task, done: false, hidden: false } : task
+    );
+    activeTaskIdRef.current = taskId;
+    setActiveTaskId(taskId);
+    persist({ ...data, tasks, activeTaskId: taskId });
+  }
+
+  function stopTask(taskId) {
+    const tasks = data.tasks.map((task) =>
+      task.id === taskId ? { ...task, inProgress: false } : task
+    );
+    const nextTimers = { ...pomodoroTimers };
+    delete nextTimers[taskId];
+    setPomodoroTimers(nextTimers);
+    const nextActiveTaskId = activeTaskId === taskId ? null : activeTaskId;
+    activeTaskIdRef.current = nextActiveTaskId;
+    setActiveTaskId(nextActiveTaskId);
+    persist({ ...data, tasks, activeTaskId: nextActiveTaskId }, nextTimers);
+  }
+
+  function completeTask(taskId) {
     const tasks = data.tasks.map((task) => {
       if (task.id !== taskId) return task;
-      if (task.done || task.hidden) {
-        return { ...task, done: false, hidden: false };
-      }
-      return { ...task, done: true, hidden: true };
+      return { ...task, done: true, hidden: true, inProgress: false };
     });
-    persist({ ...data, tasks });
+    const nextTimers = { ...pomodoroTimers };
+    delete nextTimers[taskId];
+    setPomodoroTimers(nextTimers);
+    const nextActiveTaskId = activeTaskId === taskId ? null : activeTaskId;
+    activeTaskIdRef.current = nextActiveTaskId;
+    setActiveTaskId(nextActiveTaskId);
+    persist({ ...data, tasks, activeTaskId: nextActiveTaskId }, nextTimers);
   }
 
   function hideTask(taskId) {
     const tasks = data.tasks.map((task) =>
-      task.id === taskId ? { ...task, hidden: true, done: false } : task
+      task.id === taskId ? { ...task, hidden: true, done: false, inProgress: false } : task
     );
-    persist({ ...data, tasks });
+    const nextActiveTaskId = activeTaskId === taskId ? null : activeTaskId;
+    activeTaskIdRef.current = nextActiveTaskId;
+    setActiveTaskId(nextActiveTaskId);
+    persist({ ...data, tasks, activeTaskId: nextActiveTaskId });
   }
 
   function restoreTask(taskId) {
     const tasks = data.tasks.map((task) =>
-      task.id === taskId ? { ...task, hidden: false } : task
+      task.id === taskId ? { ...task, hidden: false, done: false, inProgress: false } : task
     );
     persist({ ...data, tasks });
   }
@@ -466,7 +550,10 @@ export default function App() {
     const nextTimers = { ...pomodoroTimers };
     delete nextTimers[taskId];
     setPomodoroTimers(nextTimers);
-    persist({ ...data, tasks }, nextTimers);
+    const nextActiveTaskId = activeTaskId === taskId ? null : activeTaskId;
+    activeTaskIdRef.current = nextActiveTaskId;
+    setActiveTaskId(nextActiveTaskId);
+    persist({ ...data, tasks, activeTaskId: nextActiveTaskId }, nextTimers);
     if (focusedTaskId === taskId) {
       setFocusedTaskId(null);
     }
@@ -478,28 +565,22 @@ export default function App() {
       return;
     }
 
-    const sameDateTasks = data.tasks.filter((task) => task.date === data.selectedDate);
+    const sameDateTasks = orderTasksForDay(data.tasks, data.selectedDate, data.categories);
     const otherTasks = data.tasks.filter((task) => task.date !== data.selectedDate);
 
-    const ordered = sameDateTasks
-      .map((task, index) => ({
-        task,
-        orderValue: Number.isFinite(task.order) ? Number(task.order) : index
-      }))
-      .sort((a, b) => a.orderValue - b.orderValue)
-      .map((entry) => entry.task);
-
-    const fromIndex = ordered.findIndex((task) => task.id === sourceId);
-    const toIndex = ordered.findIndex((task) => task.id === targetId);
+    const fromIndex = sameDateTasks.findIndex((task) => task.id === sourceId);
+    const toIndex = sameDateTasks.findIndex((task) => task.id === targetId);
 
     if (fromIndex === -1 || toIndex === -1) {
       setDraggingId(null);
       return;
     }
 
-    const reordered = [...ordered];
+    const reordered = [...sameDateTasks];
     const [moved] = reordered.splice(fromIndex, 1);
-    reordered.splice(toIndex, 0, moved);
+    const targetCategory = reordered[toIndex]?.category || sameDateTasks[toIndex]?.category || moved.category;
+    const movedTask = moved.category === targetCategory ? moved : { ...moved, category: targetCategory };
+    reordered.splice(toIndex, 0, movedTask);
 
     const reindexed = reordered.map((task, index) => ({ ...task, order: index }));
     const nextTasks = [...otherTasks, ...reindexed];
@@ -508,6 +589,28 @@ export default function App() {
     setSortBy("manual");
     persist(next);
     setDraggingId(null);
+  }
+
+  function reorderCategories(sourceCategory, targetCategory) {
+    if (!sourceCategory || !targetCategory || sourceCategory === targetCategory) {
+      setDraggingCategory(null);
+      return;
+    }
+
+    const categories = [...data.categories];
+    const fromIndex = categories.indexOf(sourceCategory);
+    const toIndex = categories.indexOf(targetCategory);
+    if (fromIndex === -1 || toIndex === -1) {
+      setDraggingCategory(null);
+      return;
+    }
+
+    const reordered = [...categories];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+
+    persist({ ...data, categories: reordered });
+    setDraggingCategory(null);
   }
 
   function updateSortBy(value) {
@@ -539,7 +642,12 @@ export default function App() {
         [taskId]: { ...existing, isRunning: true }
       };
       setPomodoroTimers(nextTimers);
-      persist({ ...data }, nextTimers);
+      const tasks = setTaskProgressState(data.tasks, taskId, true).map((task) =>
+        task.id === taskId ? { ...task, done: false, hidden: false } : task
+      );
+      activeTaskIdRef.current = taskId;
+      setActiveTaskId(taskId);
+      persist({ ...data, tasks, activeTaskId: taskId }, nextTimers);
       return;
     }
 
@@ -558,7 +666,12 @@ export default function App() {
       }
     };
     setPomodoroTimers(nextTimers);
-    persist({ ...data }, nextTimers);
+    const tasks = setTaskProgressState(data.tasks, taskId, true).map((task) =>
+      task.id === taskId ? { ...task, done: false, hidden: false } : task
+    );
+    activeTaskIdRef.current = taskId;
+    setActiveTaskId(taskId);
+    persist({ ...data, tasks, activeTaskId: taskId }, nextTimers);
   }
 
   function pausePomodoro(taskId) {
@@ -640,10 +753,14 @@ export default function App() {
     if (sortBy === "manual") {
       const withOrder = filtered.map((task, index) => ({
         task,
-        orderValue: Number.isFinite(task.order) ? Number(task.order) : index
+        orderValue: Number.isFinite(task.order) ? Number(task.order) : index,
+        categoryRank: getCategoryRankMap(data.categories).get(task.category) ?? Number.MAX_SAFE_INTEGER
       }));
 
-      withOrder.sort((a, b) => a.orderValue - b.orderValue);
+      withOrder.sort((a, b) => {
+        if (a.categoryRank !== b.categoryRank) return a.categoryRank - b.categoryRank;
+        return a.orderValue - b.orderValue;
+      });
       return withOrder.map((entry) => entry.task);
     }
 
@@ -681,8 +798,10 @@ export default function App() {
       if (!groups[task.category]) groups[task.category] = [];
       groups[task.category].push(task);
     });
-    return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [visibleTasks]);
+    return data.categories
+      .filter((category) => groups[category]?.length)
+      .map((category) => [category, groups[category]]);
+  }, [data.categories, visibleTasks]);
   const focusedTask = useMemo(
     () => data.tasks.find((task) => task.id === focusedTaskId) || null,
     [data.tasks, focusedTaskId]
@@ -890,7 +1009,16 @@ export default function App() {
             )}
 
             {groupedTasks.map(([category, tasks]) => (
-              <section className="category-group" key={category} style={getCategorySectionStyle(category)}>
+              <section
+                className={`category-group ${draggingCategory === category ? "dragging-category" : ""}`}
+                key={category}
+                style={getCategorySectionStyle(category)}
+                draggable
+                onDragStart={() => setDraggingCategory(category)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => reorderCategories(draggingCategory, category)}
+                onDragEnd={() => setDraggingCategory(null)}
+              >
                 <div className="category-group-head">
                   <span className="category-group-dot" style={{ background: data.categoryColors?.[category] || DEFAULT_CATEGORY_COLOR }} />
                   <h3>{category}</h3>
@@ -904,7 +1032,7 @@ export default function App() {
                     return (
                       <li
                         key={task.id}
-                        className={`task ${task.done ? "done" : ""}`}
+                        className={`task ${task.done ? "done" : ""} ${(task.inProgress || activeTaskId === task.id) ? "in-progress" : ""}`}
                         draggable
                         onDragStart={() => setDraggingId(task.id)}
                         onDragOver={(event) => event.preventDefault()}
@@ -921,6 +1049,7 @@ export default function App() {
                             </div>
                           )}
                           <div className="meta">
+                            {(task.inProgress || activeTaskId === task.id) && <span className="pill in-progress-pill">In Progress</span>}
                             {task.hidden && <span className="pill hidden-pill">Hidden</span>}
                             <span className={`pill tasktype-${task.taskType.toLowerCase()}`}>{task.taskType}</span>
                             <span className={`pill priority-${task.priority.toLowerCase()}`}>{task.priority}</span>
@@ -949,6 +1078,20 @@ export default function App() {
                                 type="button"
                                 className="task-menu-item"
                                 onClick={() => {
+                                  if (task.inProgress || activeTaskId === task.id) {
+                                    stopTask(task.id);
+                                  } else {
+                                    startTask(task.id);
+                                  }
+                                  setOpenTaskMenuId(null);
+                                }}
+                              >
+                                {(task.inProgress || activeTaskId === task.id) ? "Stop Task" : "Start Task"}
+                              </button>
+                              <button
+                                type="button"
+                                className="task-menu-item"
+                                onClick={() => {
                                   if (timer.isRunning) {
                                     pausePomodoro(task.id);
                                   } else {
@@ -973,11 +1116,11 @@ export default function App() {
                                 type="button"
                                 className="task-menu-item"
                                 onClick={() => {
-                                  toggleDone(task.id);
+                                  completeTask(task.id);
                                   setOpenTaskMenuId(null);
                                 }}
                               >
-                                {task.done ? "Mark Pending" : "Mark Complete"}
+                                Complete Task
                               </button>
                               <button
                                 type="button"
