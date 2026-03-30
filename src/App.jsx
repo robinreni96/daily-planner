@@ -131,11 +131,40 @@ function orderTasksForDay(tasks, selectedDate, categories) {
 }
 
 function setTaskProgressState(tasks, taskId, inProgress) {
-  return tasks.map((task) => {
-    if (task.id === taskId) return { ...task, inProgress };
-    if (inProgress && task.inProgress) return { ...task, inProgress: false };
-    return task;
-  });
+  return tasks.map((task) => (task.id === taskId ? { ...task, inProgress } : task));
+}
+
+function parseMeetingFields(meetingTime) {
+  const match = String(meetingTime || "").match(/^(\d{2}):(\d{2})\s(AM|PM)/);
+  if (!match) {
+    return { meetingHour: "09", meetingMinute: "00", meetingAmPm: "AM" };
+  }
+  return {
+    meetingHour: match[1],
+    meetingMinute: match[2],
+    meetingAmPm: match[3]
+  };
+}
+
+function buildMeetingTimeFromFields(values) {
+  if (values.taskType !== "Meeting") return "";
+  if (!values.meetingHour || !values.meetingMinute || !values.meetingAmPm) return "";
+  return `${values.meetingHour}:${values.meetingMinute} ${values.meetingAmPm} IST`;
+}
+
+function buildTaskFormFromTask(task, fallbackDate) {
+  const meetingFields = parseMeetingFields(task.meetingTime);
+  return {
+    taskName: task.name || "",
+    taskDescription: task.description || "",
+    priority: task.priority || "Medium",
+    category: task.category || "General",
+    taskType: task.taskType || "Work",
+    taskDate: task.date || fallbackDate,
+    meetingHour: meetingFields.meetingHour,
+    meetingMinute: meetingFields.meetingMinute,
+    meetingAmPm: meetingFields.meetingAmPm
+  };
 }
 
 function createDefaultState() {
@@ -227,6 +256,7 @@ export default function App() {
   const [pomodoroTimers, setPomodoroTimers] = useState(createDefaultState().pomodoroTimers);
   const [activeTaskId, setActiveTaskId] = useState(createDefaultState().activeTaskId);
   const [focusedTaskId, setFocusedTaskId] = useState(null);
+  const [editingTaskId, setEditingTaskId] = useState(null);
   const activeTaskIdRef = useRef(createDefaultState().activeTaskId);
   const queuedSaveRef = useRef(null);
   const isSaveInFlightRef = useRef(false);
@@ -244,6 +274,17 @@ export default function App() {
     category: data.categories[0] || "General",
     taskType: "Work",
     taskDate: data.selectedDate || today,
+    meetingHour: "09",
+    meetingMinute: "00",
+    meetingAmPm: "AM"
+  });
+  const [editForm, setEditForm] = useState({
+    taskName: "",
+    taskDescription: "",
+    priority: "Medium",
+    category: "General",
+    taskType: "Work",
+    taskDate: today,
     meetingHour: "09",
     meetingMinute: "00",
     meetingAmPm: "AM"
@@ -277,7 +318,7 @@ export default function App() {
     const withTimers = {
       ...next,
       pomodoroTimers: pomodoroTimersOverride,
-      activeTaskId: next.activeTaskId ?? activeTaskIdRef.current
+      activeTaskId: next.activeTaskId ?? null
     };
     setData(withTimers);
     queuePersistState(withTimers);
@@ -437,12 +478,6 @@ export default function App() {
     }
   }
 
-  function buildMeetingTime() {
-    if (form.taskType !== "Meeting") return "";
-    if (!form.meetingHour || !form.meetingMinute || !form.meetingAmPm) return "";
-    return `${form.meetingHour}:${form.meetingMinute} ${form.meetingAmPm} IST`;
-  }
-
   function submitTask(event) {
     event.preventDefault();
 
@@ -450,7 +485,7 @@ export default function App() {
     const date = form.taskDate;
     if (!name || !date) return;
 
-    const meetingTime = buildMeetingTime();
+    const meetingTime = buildMeetingTimeFromFields(form);
     if (form.taskType === "Meeting" && !meetingTime) {
       alert("Meeting time is required for Meeting tasks.");
       return;
@@ -496,9 +531,9 @@ export default function App() {
     const tasks = setTaskProgressState(data.tasks, taskId, true).map((task) =>
       task.id === taskId ? { ...task, done: false, hidden: false } : task
     );
-    activeTaskIdRef.current = taskId;
-    setActiveTaskId(taskId);
-    persist({ ...data, tasks, activeTaskId: taskId });
+    activeTaskIdRef.current = null;
+    setActiveTaskId(null);
+    persist({ ...data, tasks, activeTaskId: null });
   }
 
   function stopTask(taskId) {
@@ -508,10 +543,9 @@ export default function App() {
     const nextTimers = { ...pomodoroTimers };
     delete nextTimers[taskId];
     setPomodoroTimers(nextTimers);
-    const nextActiveTaskId = activeTaskId === taskId ? null : activeTaskId;
-    activeTaskIdRef.current = nextActiveTaskId;
-    setActiveTaskId(nextActiveTaskId);
-    persist({ ...data, tasks, activeTaskId: nextActiveTaskId }, nextTimers);
+    activeTaskIdRef.current = null;
+    setActiveTaskId(null);
+    persist({ ...data, tasks, activeTaskId: null }, nextTimers);
   }
 
   function completeTask(taskId) {
@@ -522,20 +556,18 @@ export default function App() {
     const nextTimers = { ...pomodoroTimers };
     delete nextTimers[taskId];
     setPomodoroTimers(nextTimers);
-    const nextActiveTaskId = activeTaskId === taskId ? null : activeTaskId;
-    activeTaskIdRef.current = nextActiveTaskId;
-    setActiveTaskId(nextActiveTaskId);
-    persist({ ...data, tasks, activeTaskId: nextActiveTaskId }, nextTimers);
+    activeTaskIdRef.current = null;
+    setActiveTaskId(null);
+    persist({ ...data, tasks, activeTaskId: null }, nextTimers);
   }
 
   function hideTask(taskId) {
     const tasks = data.tasks.map((task) =>
       task.id === taskId ? { ...task, hidden: true, done: false, inProgress: false } : task
     );
-    const nextActiveTaskId = activeTaskId === taskId ? null : activeTaskId;
-    activeTaskIdRef.current = nextActiveTaskId;
-    setActiveTaskId(nextActiveTaskId);
-    persist({ ...data, tasks, activeTaskId: nextActiveTaskId });
+    activeTaskIdRef.current = null;
+    setActiveTaskId(null);
+    persist({ ...data, tasks, activeTaskId: null });
   }
 
   function restoreTask(taskId) {
@@ -550,12 +582,14 @@ export default function App() {
     const nextTimers = { ...pomodoroTimers };
     delete nextTimers[taskId];
     setPomodoroTimers(nextTimers);
-    const nextActiveTaskId = activeTaskId === taskId ? null : activeTaskId;
-    activeTaskIdRef.current = nextActiveTaskId;
-    setActiveTaskId(nextActiveTaskId);
-    persist({ ...data, tasks, activeTaskId: nextActiveTaskId }, nextTimers);
+    activeTaskIdRef.current = null;
+    setActiveTaskId(null);
+    persist({ ...data, tasks, activeTaskId: null }, nextTimers);
     if (focusedTaskId === taskId) {
       setFocusedTaskId(null);
+    }
+    if (editingTaskId === taskId) {
+      setEditingTaskId(null);
     }
   }
 
@@ -645,9 +679,9 @@ export default function App() {
       const tasks = setTaskProgressState(data.tasks, taskId, true).map((task) =>
         task.id === taskId ? { ...task, done: false, hidden: false } : task
       );
-      activeTaskIdRef.current = taskId;
-      setActiveTaskId(taskId);
-      persist({ ...data, tasks, activeTaskId: taskId }, nextTimers);
+      activeTaskIdRef.current = null;
+      setActiveTaskId(null);
+      persist({ ...data, tasks, activeTaskId: null }, nextTimers);
       return;
     }
 
@@ -669,9 +703,53 @@ export default function App() {
     const tasks = setTaskProgressState(data.tasks, taskId, true).map((task) =>
       task.id === taskId ? { ...task, done: false, hidden: false } : task
     );
-    activeTaskIdRef.current = taskId;
-    setActiveTaskId(taskId);
-    persist({ ...data, tasks, activeTaskId: taskId }, nextTimers);
+    activeTaskIdRef.current = null;
+    setActiveTaskId(null);
+    persist({ ...data, tasks, activeTaskId: null }, nextTimers);
+  }
+
+  function openEditTask(taskId) {
+    const task = data.tasks.find((item) => item.id === taskId);
+    if (!task) return;
+    setEditingTaskId(taskId);
+    setEditForm(buildTaskFormFromTask(task, today));
+    setOpenTaskMenuId(null);
+  }
+
+  function updateEditForm(field, value) {
+    setEditForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function submitEditTask(event) {
+    event.preventDefault();
+    if (!editingTaskId) return;
+
+    const name = editForm.taskName.trim();
+    const date = editForm.taskDate;
+    if (!name || !date) return;
+
+    const meetingTime = buildMeetingTimeFromFields(editForm);
+    if (editForm.taskType === "Meeting" && !meetingTime) {
+      alert("Meeting time is required for Meeting tasks.");
+      return;
+    }
+
+    const tasks = data.tasks.map((task) => {
+      if (task.id !== editingTaskId) return task;
+      return {
+        ...task,
+        name,
+        description: editForm.taskDescription.trim(),
+        priority: editForm.priority,
+        category: editForm.category,
+        taskType: editForm.taskType,
+        meetingTime,
+        date
+      };
+    });
+
+    persist({ ...data, tasks, selectedDate: date });
+    setEditingTaskId(null);
   }
 
   function pausePomodoro(taskId) {
@@ -1032,7 +1110,7 @@ export default function App() {
                     return (
                       <li
                         key={task.id}
-                        className={`task ${task.done ? "done" : ""} ${(task.inProgress || activeTaskId === task.id) ? "in-progress" : ""}`}
+                        className={`task ${task.done ? "done" : ""} ${task.inProgress ? "in-progress" : ""}`}
                         draggable
                         onDragStart={() => setDraggingId(task.id)}
                         onDragOver={(event) => event.preventDefault()}
@@ -1049,7 +1127,7 @@ export default function App() {
                             </div>
                           )}
                           <div className="meta">
-                            {(task.inProgress || activeTaskId === task.id) && <span className="pill in-progress-pill">In Progress</span>}
+                            {task.inProgress && <span className="pill in-progress-pill">In Progress</span>}
                             {task.hidden && <span className="pill hidden-pill">Hidden</span>}
                             <span className={`pill tasktype-${task.taskType.toLowerCase()}`}>{task.taskType}</span>
                             <span className={`pill priority-${task.priority.toLowerCase()}`}>{task.priority}</span>
@@ -1078,7 +1156,7 @@ export default function App() {
                                 type="button"
                                 className="task-menu-item"
                                 onClick={() => {
-                                  if (task.inProgress || activeTaskId === task.id) {
+                                  if (task.inProgress) {
                                     stopTask(task.id);
                                   } else {
                                     startTask(task.id);
@@ -1086,7 +1164,7 @@ export default function App() {
                                   setOpenTaskMenuId(null);
                                 }}
                               >
-                                {(task.inProgress || activeTaskId === task.id) ? "Stop Task" : "Start Task"}
+                                {task.inProgress ? "Stop Task" : "Start Task"}
                               </button>
                               <button
                                 type="button"
@@ -1111,6 +1189,13 @@ export default function App() {
                                 }}
                               >
                                 Reset Timer
+                              </button>
+                              <button
+                                type="button"
+                                className="task-menu-item"
+                                onClick={() => openEditTask(task.id)}
+                              >
+                                Edit Task
                               </button>
                               <button
                                 type="button"
@@ -1311,6 +1396,154 @@ export default function App() {
           </div>
         );
       })()}
+
+      {editingTaskId && (
+        <div className="timer-modal-backdrop" role="presentation" onClick={() => setEditingTaskId(null)}>
+          <section
+            className="timer-modal edit-task-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Edit task"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="timer-modal-close"
+              onClick={() => setEditingTaskId(null)}
+              aria-label="Close edit task dialog"
+            >
+              ✕
+            </button>
+            <p className="timer-modal-kicker">Edit Task</p>
+            <h2>Update Task</h2>
+            <form className="form panel-body" onSubmit={submitEditTask}>
+              <label>
+                Task Name
+                <input
+                  value={editForm.taskName}
+                  onChange={(event) => updateEditForm("taskName", event.target.value)}
+                  required
+                />
+              </label>
+
+              <label>
+                Task Description
+                <textarea
+                  value={editForm.taskDescription}
+                  onChange={(event) => updateEditForm("taskDescription", event.target.value)}
+                />
+              </label>
+
+              <div className="row-3">
+                <label>
+                  Priority
+                  <select
+                    value={editForm.priority}
+                    onChange={(event) => updateEditForm("priority", event.target.value)}
+                  >
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </label>
+
+                <label>
+                  Task Type
+                  <select
+                    value={editForm.taskType}
+                    onChange={(event) => updateEditForm("taskType", event.target.value)}
+                  >
+                    <option value="Work">Work</option>
+                    <option value="Learning">Learning</option>
+                    <option value="Meeting">Meeting</option>
+                  </select>
+                </label>
+
+                <label>
+                  Date
+                  <input
+                    type="date"
+                    value={editForm.taskDate}
+                    onChange={(event) => updateEditForm("taskDate", event.target.value)}
+                    required
+                  />
+                </label>
+              </div>
+
+              <label>
+                Category
+                <select
+                  value={editForm.category}
+                  onChange={(event) => updateEditForm("category", event.target.value)}
+                >
+                  {data.categories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {editForm.taskType === "Meeting" && (
+                <div className="meeting-block">
+                  <div className="row-3">
+                    <label>
+                      Hour
+                      <select
+                        value={editForm.meetingHour}
+                        onChange={(event) => updateEditForm("meetingHour", event.target.value)}
+                      >
+                        {Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0")).map((hour) => (
+                          <option key={hour} value={hour}>
+                            {hour}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label>
+                      Minute
+                      <select
+                        value={editForm.meetingMinute}
+                        onChange={(event) => updateEditForm("meetingMinute", event.target.value)}
+                      >
+                        <option value="00">00</option>
+                        <option value="15">15</option>
+                        <option value="30">30</option>
+                        <option value="45">45</option>
+                      </select>
+                    </label>
+
+                    <label>
+                      AM/PM
+                      <select
+                        value={editForm.meetingAmPm}
+                        onChange={(event) => updateEditForm("meetingAmPm", event.target.value)}
+                      >
+                        <option value="AM">AM</option>
+                        <option value="PM">PM</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div className="timer-modal-actions">
+                <button type="submit" className="timer-btn modal-primary">
+                  Save Changes
+                </button>
+                <button
+                  type="button"
+                  className="timer-btn modal-secondary"
+                  onClick={() => setEditingTaskId(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

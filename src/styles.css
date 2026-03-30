@@ -781,6 +781,18 @@ textarea {
   text-align: center;
 }
 
+.edit-task-modal {
+  text-align: left;
+}
+
+.edit-task-modal h2 {
+  text-align: left;
+}
+
+.edit-task-modal .timer-modal-kicker {
+  text-align: left;
+}
+
 .timer-modal-close {
   position: absolute;
   top: 14px;
