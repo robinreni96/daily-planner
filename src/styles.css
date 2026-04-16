@@ -435,15 +435,15 @@ textarea {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 8px;
+  gap: 14px;
 }
 
 .category-group {
   display: grid;
-  gap: 8px;
+  gap: 12px;
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 8px;
+  border-radius: 16px;
+  padding: 16px;
   transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
 }
 
@@ -456,10 +456,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #ffffff;
-  padding: 8px 10px;
+  padding: 0 2px 4px;
   cursor: grab;
 }
 
@@ -477,24 +474,24 @@ textarea {
   font-weight: 700;
 }
 
-.category-group-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-}
-
 .task {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: #fff;
-  padding: 8px;
+  padding: 14px 14px 13px;
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 6px;
-  align-items: center;
+  gap: 14px;
+  align-items: start;
   animation: taskEnter 0.26s ease;
   transition: transform 0.16s ease, box-shadow 0.16s ease;
   cursor: pointer;
+}
+
+.task-content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
 }
 
 .task:hover {
@@ -515,19 +512,13 @@ textarea {
 
 .task-title {
   font-weight: 700;
-}
-
-.task-desc {
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 0.83rem;
+  line-height: 1.35;
 }
 
 .meta {
-  margin-top: 5px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .pill {
@@ -536,7 +527,7 @@ textarea {
   background: #edf4ff;
   color: #375aa5;
   font-size: 0.74rem;
-  padding: 2px 8px;
+  padding: 4px 9px;
 }
 
 .pill.priority-high {
@@ -591,7 +582,6 @@ textarea {
 }
 
 .pomodoro-time {
-  margin-top: 7px;
   font-size: 1.02rem;
   font-weight: 800;
   color: #264780;
@@ -608,11 +598,12 @@ textarea {
   display: flex;
   justify-content: flex-end;
   align-items: flex-start;
+  padding-top: 1px;
 }
 
 .task-menu-trigger {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
@@ -825,6 +816,13 @@ textarea {
   margin: 0;
   color: #5d7293;
   font-size: 0.9rem;
+}
+
+.timer-modal-description {
+  margin: 12px 0 0;
+  color: #31435f;
+  font-size: 0.95rem;
+  line-height: 1.55;
 }
 
 .timer-modal-clock {

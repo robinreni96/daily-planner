@@ -38,6 +38,27 @@ function parseMeetingMinutes(timeLabel) {
   return hour * 60 + Number(match[2]);
 }
 
+function getPriorityStars(priority) {
+  const count = Math.max(0, 3 - (PRIORITY_ORDER[priority] ?? 3));
+  return "★".repeat(count);
+}
+
+function formatPriorityLabel(priority) {
+  return getPriorityStars(priority) || priority;
+}
+
+function compareTasksByPriority(taskA, taskB) {
+  const rankDiff = (PRIORITY_ORDER[taskA.priority] ?? 99) - (PRIORITY_ORDER[taskB.priority] ?? 99);
+  if (rankDiff !== 0) return rankDiff;
+
+  if (taskA.taskType === "Meeting" && taskB.taskType === "Meeting") {
+    const meetingDiff = parseMeetingMinutes(taskA.meetingTime) - parseMeetingMinutes(taskB.meetingTime);
+    if (meetingDiff !== 0) return meetingDiff;
+  }
+
+  return taskA.name.localeCompare(taskB.name);
+}
+
 function toRgba(hex, alpha) {
   if (!hex || typeof hex !== "string") return `rgba(79,141,253,${alpha})`;
   const cleaned = hex.replace("#", "");
@@ -844,12 +865,7 @@ export default function App() {
 
     const sorted = [...filtered].sort((a, b) => {
       if (sortBy === "priority") {
-        const rankDiff = (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99);
-        if (rankDiff !== 0) return rankDiff;
-        if (a.taskType === "Meeting" && b.taskType === "Meeting") {
-          return parseMeetingMinutes(a.meetingTime) - parseMeetingMinutes(b.meetingTime);
-        }
-        return a.name.localeCompare(b.name);
+        return compareTasksByPriority(a, b);
       }
 
       if (sortBy === "category") {
@@ -878,7 +894,7 @@ export default function App() {
     });
     return data.categories
       .filter((category) => groups[category]?.length)
-      .map((category) => [category, groups[category]]);
+      .map((category) => [category, [...groups[category]].sort(compareTasksByPriority)]);
   }, [data.categories, visibleTasks]);
   const focusedTask = useMemo(
     () => data.tasks.find((task) => task.id === focusedTaskId) || null,
@@ -1098,7 +1114,6 @@ export default function App() {
                 onDragEnd={() => setDraggingCategory(null)}
               >
                 <div className="category-group-head">
-                  <span className="category-group-dot" style={{ background: data.categoryColors?.[category] || DEFAULT_CATEGORY_COLOR }} />
                   <h3>{category}</h3>
                   <span>{tasks.length}</span>
                 </div>
@@ -1118,9 +1133,8 @@ export default function App() {
                         onDragEnd={() => setDraggingId(null)}
                         onClick={() => setFocusedTaskId(task.id)}
                       >
-                        <div>
+                        <div className="task-content">
                           <div className="task-title">{task.name}</div>
-                          <div className="task-desc">{task.description || "No description"}</div>
                           {isTimerVisible && (
                             <div className={`pomodoro-time ${timer.isRunning ? "running" : ""}`}>
                               {formatSeconds(timer.remainingSeconds)}
@@ -1130,7 +1144,9 @@ export default function App() {
                             {task.inProgress && <span className="pill in-progress-pill">In Progress</span>}
                             {task.hidden && <span className="pill hidden-pill">Hidden</span>}
                             <span className={`pill tasktype-${task.taskType.toLowerCase()}`}>{task.taskType}</span>
-                            <span className={`pill priority-${task.priority.toLowerCase()}`}>{task.priority}</span>
+                            <span className={`pill priority-${task.priority.toLowerCase()}`}>
+                              {formatPriorityLabel(task.priority)}
+                            </span>
                             {task.taskType === "Meeting" && task.meetingTime && (
                               <span className="pill">{task.meetingTime}</span>
                             )}
@@ -1352,8 +1368,11 @@ export default function App() {
               <p className="timer-modal-kicker">Focused Session</p>
               <h2>{focusedTask.name}</h2>
               <p className="timer-modal-meta">
-                {focusedTask.category} • {focusedTask.taskType} • {focusedTask.priority}
+                {focusedTask.category} • {focusedTask.taskType} • {formatPriorityLabel(focusedTask.priority)}
               </p>
+              {focusedTask.description && (
+                <p className="timer-modal-description">{focusedTask.description}</p>
+              )}
               <div className="timer-circle-wrap">
                 <svg className="timer-circle" viewBox="0 0 120 120" aria-hidden="true">
                   <circle className="timer-circle-bg" cx="60" cy="60" r="52" />
