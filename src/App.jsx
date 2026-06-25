@@ -6,6 +6,19 @@ const PRIORITY_ORDER = { High: 0, Medium: 1, Low: 2 };
 const DEFAULT_CATEGORY_COLOR = "#4f8dfd";
 const ALLOWED_SORT_BY = new Set(["priority", "category", "taskType", "createdAt", "manual"]);
 const DEFAULT_POMODORO_SECONDS = 30 * 60;
+const THEME_STORAGE_KEY = "daily-planner-theme";
+
+function getInitialTheme() {
+  if (typeof window === "undefined") return "light";
+  let savedTheme = null;
+  try {
+    savedTheme = window.localStorage?.getItem(THEME_STORAGE_KEY);
+  } catch {
+    savedTheme = null;
+  }
+  if (savedTheme === "dark" || savedTheme === "light") return savedTheme;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 
 function getTodayDateIST() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -262,6 +275,7 @@ async function saveStateToDb(nextState) {
 export default function App() {
   const today = getTodayDateIST();
   const [data, setData] = useState(createDefaultState);
+  const [theme, setTheme] = useState(getInitialTheme);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const [sortBy, setSortBy] = useState(createDefaultState().sortBy);
@@ -285,6 +299,7 @@ export default function App() {
     () => Object.values(pomodoroTimers).some((timer) => timer?.isRunning),
     [pomodoroTimers]
   );
+  const isDarkMode = theme === "dark";
 
   const [newCategory, setNewCategory] = useState("");
   const [newCategoryColor, setNewCategoryColor] = useState(DEFAULT_CATEGORY_COLOR);
@@ -344,6 +359,15 @@ export default function App() {
     setData(withTimers);
     queuePersistState(withTimers);
   }
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Theme still applies for the current session if browser storage is unavailable.
+    }
+  }, [theme]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -908,6 +932,17 @@ export default function App() {
           <h1>Daily Planner</h1>
           <p className="hero-date">Viewing (IST): {formatDateIST(data.selectedDate)}</p>
         </div>
+        <button
+          type="button"
+          className="theme-toggle"
+          aria-pressed={isDarkMode}
+          onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+        >
+          <span className="theme-toggle-icon" aria-hidden="true">
+            {isDarkMode ? "☀" : "☾"}
+          </span>
+          {isDarkMode ? "Light" : "Dark"}
+        </button>
       </section>
 
       <section className={`grid ${isSidebarOpen ? "sidebar-open" : "sidebar-collapsed"}`}>
